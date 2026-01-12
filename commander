@@ -1,0 +1,68 @@
+import time
+import random
+from huggingface_hub import HfApi
+
+# --- CONFIGURATION ---
+TOKEN = "your_write_token_here"  # Replace with your actual HF Write Token
+api = HfApi(token=TOKEN)
+
+def get_my_spaces():
+    """Automatically fetches all Space IDs for your account."""
+    try:
+        user = api.whoami()['name']
+        spaces = api.list_spaces(author=user)
+        return [s.id for s in spaces]
+    except Exception as e:
+        print(f"Error fetching spaces: {e}")
+        return []
+
+def manage_rotation():
+    print(f"\n{'='*40}")
+    print(f"Cycle Started: {time.ctime()}")
+    
+    # 1. Auto-discover all your spaces
+    all_spaces = get_my_spaces()
+    if not all_spaces:
+        print("No spaces found. Retrying in 1 hour...")
+        return
+
+    print(f"Found {len(all_spaces)} spaces. Preparing rotation...")
+
+    # 2. Randomly pick 5 to be "Awake" and 5 to "Sleep" (Pause)
+    # This ratio ensures you don't exceed hidden account limits.
+    random.shuffle(all_spaces)
+    to_wake = all_spaces[:5]
+    to_sleep = all_spaces[5:]
+
+    # 3. Put 5 Spaces to Sleep
+    for space in to_sleep:
+        try:
+            runtime = api.get_space_runtime(repo_id=space)
+            if runtime.stage != "PAUSED":
+                print(f"[SLEEP] Pausing {space}...")
+                api.pause_space(repo_id=space)
+                # Stagger the command to look human
+                time.sleep(random.randint(30, 90)) 
+        except Exception as e:
+            print(f"Error pausing {space}: {e}")
+
+    # 4. Wake 5 Spaces Up
+    for space in to_wake:
+        try:
+            runtime = api.get_space_runtime(repo_id=space)
+            if runtime.stage != "RUNNING":
+                print(f"[WAKE] Restarting {space}...")
+                api.restart_space(repo_id=space)
+                # Give the API a breather
+                time.sleep(random.randint(60, 120))
+        except Exception as e:
+            print(f"Error waking {space}: {e}")
+
+    print(f"Cycle Finished. Next rotation in 12 hours.")
+    print(f"{'='*40}")
+
+if __name__ == "__main__":
+    while True:
+        manage_rotation()
+        # Wait 12 hours (43200 seconds) before swapping the fleet
+        time.sleep(43200)
